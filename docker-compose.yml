@@ -1,0 +1,40 @@
+services:
+
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: ect-neo4j
+    ports:
+      - "7474:7474"   # Neo4j Browser (HTTP)
+      - "7687:7687"   # Bolt protocol (driver connection)
+    environment:
+      NEO4J_AUTH: ${NEO4J_USERNAME}/${NEO4J_PASSWORD}
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "${NEO4J_USERNAME}", "-p", "${NEO4J_PASSWORD}", "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  ect-graph-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ect-graph-api
+    ports:
+      - "5200:8080"   # API available at http://localhost:5200
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Neo4j__Uri: bolt://neo4j:7687
+      Neo4j__Username: ${NEO4J_USERNAME}
+      Neo4j__Password: ${NEO4J_PASSWORD}
+      Neo4j__Database: neo4j
+    depends_on:
+      neo4j:
+        condition: service_healthy
+
+volumes:
+  neo4j-data:
+  neo4j-logs:
