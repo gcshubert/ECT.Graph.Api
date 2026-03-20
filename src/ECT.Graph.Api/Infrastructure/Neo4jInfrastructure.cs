@@ -65,8 +65,15 @@ public class GraphRepository : IGraphRepository
         {
             try
             {
-                await session.RunAsync(statement);
-                _logger.LogDebug("Schema statement applied: {Statement}", statement[..Math.Min(80, statement.Length)]);
+                // 1. Run the statement
+                var result = await session.RunAsync(statement);
+
+                // 2. IMPORTANT: Explicitly consume the result metadata/summary 
+                // to clear the result stream for the next iteration.
+                await result.ConsumeAsync();
+
+                _logger.LogDebug("Schema statement applied: {Statement}",
+                    statement[..Math.Min(80, statement.Length)]);
             }
             catch (Exception ex)
             {
@@ -76,7 +83,6 @@ public class GraphRepository : IGraphRepository
         }
         _logger.LogInformation("Neo4j schema constraints applied successfully.");
     }
-
     public IAsyncSession OpenSession()
     {
         return _factory.Driver.AsyncSession(c =>

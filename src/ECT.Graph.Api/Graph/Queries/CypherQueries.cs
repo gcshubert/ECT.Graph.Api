@@ -141,6 +141,10 @@ public static class CypherQueries
         MATCH (s:ScenarioNode {id: $scenarioNodeId})-[r:USES]->(p:ParameterNode)
         RETURN s, r, p";
 
+    public const string DeleteUsesEdgesForScenario = @"
+        MATCH (s:ScenarioNode {id: $scenarioNodeId})-[r:USES]->()
+        DELETE r";
+
     // ── BELONGS_TO edges ──────────────────────────────────────────────────────
 
     public const string CreateBelongsToEdge = @"

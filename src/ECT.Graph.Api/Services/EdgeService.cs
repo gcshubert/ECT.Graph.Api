@@ -11,6 +11,9 @@ public interface IEdgeService
     Task<bool> DeleteContributesToAsync(string edgeId);
 
     Task<UsesEdge> CreateUsesAsync(UsesEdge edge);
+    Task<UsesEdge?> GetUsesEdgeForScenarioAsync(string scenarioNodeId);
+    Task DeleteUsesEdgesForScenarioAsync(string scenarioNodeId);
+    Task<UsesEdge> UpsertUsesAsync(UsesEdge edge);
 
     Task<BelongsToEdge> CreateBelongsToAsync(BelongsToEdge edge);
 
@@ -63,6 +66,66 @@ public class EdgeService : IEdgeService
             baseParameterValues   = valuesJson
         });
         return edge;
+    }
+
+    public async Task<UsesEdge?> GetUsesEdgeForScenarioAsync(string scenarioNodeId)
+    {
+        await using var session = _repo.OpenSession();
+        var cursor = await session.RunAsync(CypherQueries.GetUsesEdgeForScenario, new { scenarioNodeId });
+        var records = await cursor.ToListAsync();
+
+        // 1. SELF-HEALING: If missing, create it on the fly
+        if (records.Count == 0)
+        {
+            var newEdge = new UsesEdge
+            {
+                Id = $"edge-{scenarioNodeId}",
+                ScenarioNodeId = scenarioNodeId,
+                RootParameterNodeId = $"root-{scenarioNodeId}",
+                BaseParameterValues = new Dictionary<string, double>()
+            };
+            return await CreateUsesAsync(newEdge);
+        }
+
+        var r = records[0]["r"].As<IRelationship>();
+
+        // 2. DEFENSIVE PARSING: Use TryGetValue to avoid KeyNotFoundException
+        // This handles cases where the property names in Neo4j don't match exactly
+        return new UsesEdge
+        {
+            Id = r.Properties.TryGetValue("id", out var id) ? id.As<string>() : $"edge-{scenarioNodeId}",
+            ScenarioNodeId = r.Properties.TryGetValue("scenarioNodeId", out var sId) ? sId.As<string>() : scenarioNodeId,
+            RootParameterNodeId = r.Properties.TryGetValue("rootParameterNodeId", out var rId) ? rId.As<string>() : $"root-{scenarioNodeId}",
+            BaseParameterValues = SafeDeserialize(r)
+        };
+    }
+
+    // Helper to keep the main method clean
+    private Dictionary<string, double> SafeDeserialize(IRelationship r)
+    {
+        if (!r.Properties.TryGetValue("baseParameterValues", out var json)) return new();
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, double>>(json.As<string>())
+                   ?? new Dictionary<string, double>();
+        }
+        catch
+        {
+            return new Dictionary<string, double>();
+        }
+    }
+
+    public async Task DeleteUsesEdgesForScenarioAsync(string scenarioNodeId)
+    {
+        await using var session = _repo.OpenSession();
+        await session.RunAsync(CypherQueries.DeleteUsesEdgesForScenario, new { scenarioNodeId });
+    }
+
+    public async Task<UsesEdge> UpsertUsesAsync(UsesEdge edge)
+    {
+        await DeleteUsesEdgesForScenarioAsync(edge.ScenarioNodeId);
+        return await CreateUsesAsync(edge);
     }
 
     // ── BELONGS_TO ────────────────────────────────────────────────────────────

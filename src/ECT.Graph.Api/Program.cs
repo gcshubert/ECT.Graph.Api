@@ -5,6 +5,7 @@ using ECT.Graph.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+
 // Neo4j
 builder.Services.Configure<Neo4jSettings>(builder.Configuration.GetSection("Neo4j"));
 builder.Services.AddSingleton<INeo4jDriverFactory, Neo4jDriverFactory>();
@@ -26,6 +27,19 @@ builder.Services.AddControllers()
         opts.JsonSerializerOptions.NumberHandling =
             System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
     });
+//added to allow debugging GCS 03/20/2026
+builder.Services.PostConfigure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        // --- SET BREAKPOINT HERE ---
+        // Inspect 'context.ModelState' in the Locals window.
+        // Look for any keys with an "Errors" count > 0.
+
+        return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(context.ModelState);
+    };
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -42,6 +56,18 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+// added for debugging purposes 03/20/2026 GCS
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.Value.Contains("parameters", StringComparison.OrdinalIgnoreCase))
+    {
+        // 1. SET BREAKPOINT HERE
+        // 2. If this hits, the request is actually reaching this API.
+        // 3. If it DOES NOT hit, the problem is in the SENDER (ECT.ACC.Api).
+    }
+    await next();
+});
 
 app.UseSwagger();
 app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "ECT.Graph.Api v1"));

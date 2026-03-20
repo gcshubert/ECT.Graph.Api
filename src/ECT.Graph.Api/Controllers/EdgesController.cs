@@ -62,6 +62,30 @@ public class EdgesController : ControllerBase
         return CreatedAtAction(nameof(CreateUses), created);
     }
 
+    /// <summary>
+    /// Upserts the USES edge for a scenario (deletes any existing edge and creates a new one).
+    /// </summary>
+    [HttpPut("uses/{scenarioNodeId}")]
+    [ProducesResponseType(typeof(UsesEdge), 200)]
+    public async Task<IActionResult> UpsertUses(string scenarioNodeId, [FromBody] UsesEdge edge)
+    {
+        edge.ScenarioNodeId = scenarioNodeId;
+        var upserted = await _service.UpsertUsesAsync(edge);
+        return Ok(upserted);
+    }
+
+    /// <summary>
+    /// Gets the USES edge for a scenario.
+    /// </summary>
+    [HttpGet("uses/by-scenario/{scenarioNodeId}")]
+    [ProducesResponseType(typeof(UsesEdge), 200)]
+    [ProducesResponseType(404)]
+    public async Task<IActionResult> GetUsesByScenario(string scenarioNodeId)
+    {
+        var uses = await _service.GetUsesEdgeForScenarioAsync(scenarioNodeId);
+        return uses is null ? NotFound() : Ok(uses);
+    }
+
     // ── BELONGS_TO ────────────────────────────────────────────────────────────
 
     /// <summary>
