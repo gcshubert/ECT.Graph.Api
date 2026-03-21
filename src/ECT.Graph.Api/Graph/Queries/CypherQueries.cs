@@ -118,6 +118,16 @@ public static class CypherQueries
         }]->(to)
         RETURN r";
 
+    // ── Hierarchy parent lookup ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns all CONTRIBUTES_TO edges for a given scenario's parameter topology.
+    /// Used to reconstruct parent/child relationships in the hierarchy tree.
+    /// </summary>
+    public const string GetAllContributesToEdges = @"
+        MATCH (child:ParameterNode)-[r:CONTRIBUTES_TO]->(parent:ParameterNode)
+        RETURN child.id AS childId, parent.id AS parentId, r.weight AS weight, r.rollupOperator AS rollupOperator";
+
     public const string GetContributorsOf = @"
         MATCH (child:ParameterNode)-[r:CONTRIBUTES_TO]->(parent:ParameterNode {id: $parentId})
         RETURN child, r";

@@ -99,6 +99,19 @@ public class EdgesController : ControllerBase
         return CreatedAtAction(nameof(CreateBelongsTo), created);
     }
 
+    // ── CONTRIBUTES_TO ─────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Returns all CONTRIBUTES_TO edges — child/parent ID pairs with edge properties.
+    /// Used by ECT.ACC.Api to reconstruct the parameter hierarchy tree.
+    /// </summary>
+    [HttpGet("contributes-to")]
+    [ProducesResponseType(typeof(IEnumerable<ContributesToEdgeSummary>), 200)]
+    public async Task<IActionResult> GetAllContributesTo()
+    {
+        var edges = await _service.GetAllContributesToAsync();
+        return Ok(edges);
+    }
+
     // ── OVERRIDES ─────────────────────────────────────────────────────────────
 
     /// <summary>

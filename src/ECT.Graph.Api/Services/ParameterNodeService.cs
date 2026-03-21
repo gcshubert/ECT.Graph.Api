@@ -77,12 +77,13 @@ public class ParameterNodeService : IParameterNodeService
 
     private static ParameterNode MapNode(INode n) => new()
     {
-        Id             = n["id"].As<string>(),
-        Name           = n["name"].As<string>(),
-        Role           = Enum.Parse<ParameterRole>(n["role"].As<string>()),
+        Id = n.Properties.TryGetValue("id", out var id) ? id.As<string>() : string.Empty,
+        Name = n.Properties.TryGetValue("name", out var name) ? name.As<string>() : string.Empty,
+        Role = n.Properties.TryGetValue("role", out var role) && role is not null
+                            ? Enum.Parse<ParameterRole>(role.As<string>(), ignoreCase: true) : ParameterRole.C,
         RollupOperator = n.Properties.TryGetValue("rollupOperator", out var op) && op is not null
-                            ? Enum.Parse<RollupOperator>(op.As<string>()) : null,
-        Description    = n.Properties.TryGetValue("description", out var d) ? d?.As<string>() : null,
-        IsActive       = n["isActive"].As<bool>()
+                            ? Enum.Parse<RollupOperator>(op.As<string>(), ignoreCase: true) : null,
+        Description = n.Properties.TryGetValue("description", out var d) ? d?.As<string>() : null,
+        IsActive = n.Properties.TryGetValue("isActive", out var active) ? active.As<bool>() : true
     };
 }

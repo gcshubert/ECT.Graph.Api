@@ -7,6 +7,7 @@ namespace ECT.Graph.Api.Services;
 
 public interface IEdgeService
 {
+    Task<IEnumerable<ContributesToEdgeSummary>> GetAllContributesToAsync();
     Task<ContributesToEdge> CreateContributesToAsync(ContributesToEdge edge);
     Task<bool> DeleteContributesToAsync(string edgeId);
 
@@ -29,6 +30,20 @@ public class EdgeService : IEdgeService
     public EdgeService(IGraphRepository repo) => _repo = repo;
 
     // ── CONTRIBUTES_TO ────────────────────────────────────────────────────────
+
+    public async Task<IEnumerable<ContributesToEdgeSummary>> GetAllContributesToAsync()
+    {
+        await using var session = _repo.OpenSession();
+        var cursor = await session.RunAsync(CypherQueries.GetAllContributesToEdges);
+        var records = await cursor.ToListAsync();
+        return records.Select(r => new ContributesToEdgeSummary
+        {
+            ChildId = r["childId"].As<string>(),
+            ParentId = r["parentId"].As<string>(),
+            Weight = r["weight"].As<double>(),
+            RollupOperator = r["rollupOperator"]?.As<string>()
+        });
+    }
 
     public async Task<ContributesToEdge> CreateContributesToAsync(ContributesToEdge edge)
     {
