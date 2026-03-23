@@ -40,6 +40,7 @@ public enum SolveForMode
     C,      // Classic ACC — control deficit analysis (known: E, T)
     T,      // Time window optimization (known: E, C)
     E,      // Energy requirement derivation (known: C, T)
+    k,      // Capability ceiling (known: E, C, T — what complexity can this system achieve?)
     T_ET,   // Throughput optimization (known: E×C, k)
     C_ET,   // Precision optimization (known: E×T, k)
     EC      // Combined energy-control budget (known: T, k)

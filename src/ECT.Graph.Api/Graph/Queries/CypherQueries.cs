@@ -125,8 +125,8 @@ public static class CypherQueries
     /// Used to reconstruct parent/child relationships in the hierarchy tree.
     /// </summary>
     public const string GetAllContributesToEdges = @"
-        MATCH (child:ParameterNode)-[r:CONTRIBUTES_TO]->(parent:ParameterNode)
-        RETURN child.id AS childId, parent.id AS parentId, r.weight AS weight, r.rollupOperator AS rollupOperator";
+    MATCH (child:ParameterNode)-[r:CONTRIBUTES_TO]->(parent:ParameterNode)
+    RETURN child.id AS childId, parent.id AS parentId, r.weight AS weight, r.rollupOperator AS rollupOperator, r.id AS id";
 
     public const string GetContributorsOf = @"
         MATCH (child:ParameterNode)-[r:CONTRIBUTES_TO]->(parent:ParameterNode {id: $parentId})

@@ -32,12 +32,12 @@ public class ContributesToEdge
 
 public class ContributesToEdgeSummary
 {
+    public string Id { get; set; } = string.Empty;   // ← add
     public string ChildId { get; set; } = string.Empty;
     public string ParentId { get; set; } = string.Empty;
     public double Weight { get; set; }
     public string? RollupOperator { get; set; }
 }
-
 /// <summary>
 /// USES — ScenarioNode to root ParameterNode.
 /// Establishes which topology a scenario operates over.
