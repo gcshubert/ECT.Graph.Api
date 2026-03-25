@@ -9,6 +9,8 @@ public interface IEdgeService
 {
     Task<IEnumerable<ContributesToEdgeSummary>> GetAllContributesToAsync();
     Task<ContributesToEdge> CreateContributesToAsync(ContributesToEdge edge);
+    Task<int> GetMaxSortOrderForParentAsync(string parentId);
+
     Task<bool> DeleteContributesToAsync(string edgeId);
 
     Task<UsesEdge> CreateUsesAsync(UsesEdge edge);
@@ -41,7 +43,8 @@ public class EdgeService : IEdgeService
             ChildId = r["childId"].As<string>(),
             ParentId = r["parentId"].As<string>(),
             Weight = r["weight"].As<double>(),
-            RollupOperator = r["rollupOperator"]?.As<string>()
+            RollupOperator = r["rollupOperator"]?.As<string>(),
+            SortOrder = r["sortOrder"].As<int>()
         });
     }
 
@@ -54,9 +57,19 @@ public class EdgeService : IEdgeService
             toId           = edge.ToParameterNodeId,
             id             = edge.Id,
             rollupOperator = edge.RollupOperator,
-            weight         = edge.Weight
+            weight         = edge.Weight,
+            sortOrder = edge.SortOrder
         });
         return edge;
+    }
+
+    public async Task<int> GetMaxSortOrderForParentAsync(string parentId)
+    {
+        await using var session = _repo.OpenSession();
+        var cursor = await session.RunAsync(
+            CypherQueries.GetMaxSortOrderForParent, new { parentId });
+        var records = await cursor.ToListAsync();
+        return records.Count > 0 ? records[0]["maxSortOrder"].As<int>() : 0;
     }
 
     public async Task<bool> DeleteContributesToAsync(string edgeId)

@@ -115,6 +115,7 @@ public static class CypherQueries
             id:             $id,
             rollupOperator: $rollupOperator,
             weight:         $weight
+            sortOrder:      $sortOrder
         }]->(to)
         RETURN r";
 
@@ -126,7 +127,12 @@ public static class CypherQueries
     /// </summary>
     public const string GetAllContributesToEdges = @"
     MATCH (child:ParameterNode)-[r:CONTRIBUTES_TO]->(parent:ParameterNode)
-    RETURN child.id AS childId, parent.id AS parentId, r.weight AS weight, r.rollupOperator AS rollupOperator, r.id AS id";
+    RETURN child.id AS childId, parent.id AS parentId, r.weight AS weight, r.rollupOperator AS rollupOperator, r.id AS id, r.sortOrder AS sortOrder
+    ORDER BY r.sortOrder ASC";
+
+    public const string GetMaxSortOrderForParent = @"
+    MATCH (child:ParameterNode)-[r:CONTRIBUTES_TO]->(parent:ParameterNode {id: $parentId})
+    RETURN coalesce(max(r.sortOrder), 0) AS maxSortOrder";
 
     public const string GetContributorsOf = @"
         MATCH (child:ParameterNode)-[r:CONTRIBUTES_TO]->(parent:ParameterNode {id: $parentId})

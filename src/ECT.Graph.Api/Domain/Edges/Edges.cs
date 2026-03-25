@@ -28,6 +28,7 @@ public class ContributesToEdge
     /// for WeightedSum operators.
     /// </summary>
     public double Weight { get; set; } = 1.0;
+    public int SortOrder { get; set; } = 0;
 }
 
 public class ContributesToEdgeSummary
@@ -37,6 +38,7 @@ public class ContributesToEdgeSummary
     public string ParentId { get; set; } = string.Empty;
     public double Weight { get; set; }
     public string? RollupOperator { get; set; }
+    public int SortOrder { get; set; } = 0;
 }
 /// <summary>
 /// USES — ScenarioNode to root ParameterNode.
