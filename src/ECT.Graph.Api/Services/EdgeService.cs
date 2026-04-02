@@ -1,4 +1,5 @@
 using ECT.Graph.Api.Domain.Edges;
+using ECT.Graph.Api.Domain.Math;
 using ECT.Graph.Api.Graph.Queries;
 using ECT.Graph.Api.Infrastructure;
 using Neo4j.Driver;
@@ -21,7 +22,7 @@ public interface IEdgeService
     Task<BelongsToEdge> CreateBelongsToAsync(BelongsToEdge edge);
 
     Task<OverridesEdge> CreateOverridesAsync(OverridesEdge edge);
-    Task<IEnumerable<(string ParameterNodeId, double OverrideValue)>> GetOverridesForConfigurationAsync(string configurationNodeId);
+    Task<IEnumerable<(string ParameterNodeId, ScientificValue OverrideValue)>> GetOverridesForConfigurationAsync(string configurationNodeId);
     Task<bool> DeleteOverridesAsync(string edgeId);
 }
 
@@ -42,9 +43,9 @@ public class EdgeService : IEdgeService
         {
             ChildId = r["childId"].As<string>(),
             ParentId = r["parentId"].As<string>(),
-            Weight = r["weight"].As<double>(),
+            Weight = r["weight"].As<double?>(null) ?? 1.0,
             RollupOperator = r["rollupOperator"]?.As<string>(),
-            SortOrder = r["sortOrder"].As<int>()
+            SortOrder = r["sortOrder"].As<int?>(null) ?? 0
         });
     }
 
@@ -110,7 +111,7 @@ public class EdgeService : IEdgeService
                 Id = $"edge-{scenarioNodeId}",
                 ScenarioNodeId = scenarioNodeId,
                 RootParameterNodeId = $"root-{scenarioNodeId}",
-                BaseParameterValues = new Dictionary<string, double>()
+                BaseParameterValues = new Dictionary<string, ScientificValue>()
             };
             return await CreateUsesAsync(newEdge);
         }
@@ -129,19 +130,33 @@ public class EdgeService : IEdgeService
     }
 
     // Helper to keep the main method clean
-    private Dictionary<string, double> SafeDeserialize(IRelationship r)
+    private Dictionary<string, ScientificValue> SafeDeserialize(IRelationship r)
     {
         if (!r.Properties.TryGetValue("baseParameterValues", out var json)) return new();
 
         try
         {
-            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, double>>(json.As<string>())
-                   ?? new Dictionary<string, double>();
+            // Try to deserialize as ScientificValue dictionary (new format)
+            var result = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ScientificValue>>(json.As<string>());
+            if (result != null) return result;
         }
         catch
         {
-            return new Dictionary<string, double>();
+            // Fallback: try to deserialize as double dictionary (old format) and convert
+            try
+            {
+                var oldResult = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, double>>(json.As<string>());
+                if (oldResult != null)
+                {
+                    return oldResult.ToDictionary(kvp => kvp.Key, kvp => new ScientificValue(kvp.Value));
+                }
+            }
+            catch
+            {
+                // Ignore
+            }
         }
+        return new Dictionary<string, ScientificValue>();
     }
 
     public async Task DeleteUsesEdgesForScenarioAsync(string scenarioNodeId)
@@ -175,26 +190,39 @@ public class EdgeService : IEdgeService
     public async Task<OverridesEdge> CreateOverridesAsync(OverridesEdge edge)
     {
         await using var session = _repo.OpenSession();
+        var valueJson = System.Text.Json.JsonSerializer.Serialize(edge.OverrideValue);
         await session.RunAsync(CypherQueries.CreateOverridesEdge, new
         {
             configurationNodeId = edge.ConfigurationNodeId,
             parameterNodeId     = edge.ParameterNodeId,
             id                  = edge.Id,
-            overrideValue       = edge.OverrideValue
+            overrideValue       = valueJson
         });
         return edge;
     }
 
-    public async Task<IEnumerable<(string ParameterNodeId, double OverrideValue)>> GetOverridesForConfigurationAsync(
+    public async Task<IEnumerable<(string ParameterNodeId, ScientificValue OverrideValue)>> GetOverridesForConfigurationAsync(
         string configurationNodeId)
     {
         await using var session = _repo.OpenSession();
         var cursor = await session.RunAsync(CypherQueries.GetOverridesForConfiguration, new { configurationNodeId });
         var records = await cursor.ToListAsync();
-        return records.Select(r => (
-            r["p"].As<INode>()["id"].As<string>(),
-            r["r"].As<IRelationship>()["overrideValue"].As<double>()
-        ));
+        return records.Select(r => {
+            var paramId = r["p"].As<INode>()["id"].As<string>();
+            var valueJson = r["r"].As<IRelationship>()["overrideValue"].As<string>();
+            ScientificValue value;
+            try
+            {
+                value = System.Text.Json.JsonSerializer.Deserialize<ScientificValue>(valueJson) ?? new ScientificValue(0, 0);
+            }
+            catch
+            {
+                // Fallback for old double format
+                var oldValue = double.Parse(valueJson);
+                value = new ScientificValue(oldValue);
+            }
+            return (paramId, value);
+        });
     }
 
     public async Task<bool> DeleteOverridesAsync(string edgeId)

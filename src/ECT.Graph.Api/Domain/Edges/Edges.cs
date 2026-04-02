@@ -1,5 +1,7 @@
 namespace ECT.Graph.Api.Domain.Edges;
 
+using ECT.Graph.Api.Domain.Math;
+
 /// <summary>
 /// CONTRIBUTES_TO — between ParameterNodes.
 /// Carries rollup operator and weight. Defines the process topology tree.
@@ -59,7 +61,7 @@ public class UsesEdge
     /// Base parameter values for this scenario, keyed by ParameterNode Id.
     /// These are the unoverridden values used when no ConfigurationNode override applies.
     /// </summary>
-    public Dictionary<string, double> BaseParameterValues { get; set; } = new();
+    public Dictionary<string, ScientificValue> BaseParameterValues { get; set; } = new();
 }
 
 /// <summary>
@@ -88,5 +90,5 @@ public class OverridesEdge
     /// The override value that replaces the scenario base value for this parameter
     /// during a configuration run.
     /// </summary>
-    public double OverrideValue { get; set; }
+    public ScientificValue OverrideValue { get; set; }
 }

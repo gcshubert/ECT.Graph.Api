@@ -24,6 +24,7 @@ builder.Services.AddControllers()
     {
         opts.JsonSerializerOptions.Converters.Add(
             new System.Text.Json.Serialization.JsonStringEnumConverter());
+        // opts.JsonSerializerOptions.PropertyNamingPolicy = null; // Use PascalCase
         opts.JsonSerializerOptions.NumberHandling =
             System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
     });
@@ -72,7 +73,7 @@ app.Use(async (context, next) =>
 app.UseSwagger();
 app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "ECT.Graph.Api v1"));
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection(); // Disabled for development - causes issues with HTTP clients
 app.MapControllers();
 
 // On startup, apply Neo4j schema constraints

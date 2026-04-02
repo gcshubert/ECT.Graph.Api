@@ -1,3 +1,4 @@
+using ECT.Graph.Api.Domain.Math;
 using ECT.Graph.Api.Domain.Nodes;
 using ECT.Graph.Api.Graph.Queries;
 using ECT.Graph.Api.Infrastructure;
@@ -14,7 +15,7 @@ public record NodeResult(
     string NodeId,
     string Name,
     ParameterRole Role,
-    double? EffectiveValue,   // null = N/A (node not relevant to this solve-for mode)
+    ScientificValue? EffectiveValue,   // null = N/A (node not relevant to this solve-for mode)
     double Weight,
     string RollupOperator,
     bool IsLeaf,
@@ -29,7 +30,7 @@ public record WalkResult(
     string? ConfigurationNodeId,
     SolveForMode SolveForMode,
     NodeResult RootResult,
-    double? RollupValue,      // null = no active nodes contributed to root
+    ScientificValue? RollupValue,      // null = no active nodes contributed to root
     DateTimeOffset ComputedAt
 );
 
@@ -81,7 +82,7 @@ public class GraphWalker : IGraphWalker
         var (scenario, rootParameterId, baseValues) = await ResolveScenarioAsync(session, scenarioNodeId);
 
         // 2. If configuration provided, get overrides and merge onto base values
-        var effectiveValues = new Dictionary<string, double>(baseValues);
+        var effectiveValues = new Dictionary<string, ScientificValue>(baseValues);
         if (configurationNodeId is not null)
         {
             var overrides = await GetOverrideMapAsync(session, configurationNodeId);
@@ -100,7 +101,7 @@ public class GraphWalker : IGraphWalker
             configurationNodeId,
             scenario.SolveForMode,
             rootResult,
-            double.IsNaN(rootResult.EffectiveValue ?? double.NaN) ? null : rootResult.EffectiveValue,
+            rootResult.EffectiveValue,
             DateTimeOffset.UtcNow
         );
     }
@@ -110,7 +111,7 @@ public class GraphWalker : IGraphWalker
     private NodeResult EvaluateNode(
         string nodeId,
         SubtreeData subtree,
-        Dictionary<string, double> effectiveValues,
+        Dictionary<string, ScientificValue> effectiveValues,
         SolveForMode solveForMode)
     {
         var node = subtree.Nodes[nodeId];
@@ -120,7 +121,7 @@ public class GraphWalker : IGraphWalker
         {
             // Leaf node — value comes from effectiveValues
             var isRelevant = IsNodeRelevantToSolveFor(node.Role, solveForMode);
-            var leafValue = isRelevant && effectiveValues.TryGetValue(nodeId, out var v) ? v : (double?)null;
+            var leafValue = isRelevant && effectiveValues.TryGetValue(nodeId, out var v) ? v : (ScientificValue?)null;
 
             return new NodeResult(
                 nodeId, node.Name, node.Role,
@@ -150,7 +151,7 @@ public class GraphWalker : IGraphWalker
     /// Adding new process topologies requires no changes here.
     /// Track 2 will extend this with the formal ECT math rewrite.
     /// </summary>
-    private static double? Rollup(
+    private static ScientificValue? Rollup(
         List<NodeResult> children,
         List<EdgeData> edges,
         string operatorName)
@@ -158,7 +159,7 @@ public class GraphWalker : IGraphWalker
         // Exclude N/A children from rollup
         var activeChildren = children
             .Zip(edges, (c, e) => (result: c, edge: e))
-            .Where(x => x.result.EffectiveValue.HasValue)
+            .Where(x => x.result.EffectiveValue != null)
             .ToList();
 
         if (activeChildren.Count == 0) return null;
@@ -166,19 +167,19 @@ public class GraphWalker : IGraphWalker
         return operatorName switch
         {
             "Sum" =>
-                activeChildren.Sum(x => x.result.EffectiveValue!.Value),
+                activeChildren.Aggregate(new ScientificValue(0, 0), (acc, x) => acc + x.result.EffectiveValue!),
 
             "Product" =>
-                activeChildren.Aggregate(1.0, (acc, x) => acc * x.result.EffectiveValue!.Value),
+                activeChildren.Aggregate(new ScientificValue(1, 0), (acc, x) => acc * x.result.EffectiveValue!),
 
             "WeightedSum" =>
-                activeChildren.Sum(x => x.result.EffectiveValue!.Value * x.edge.Weight),
+                activeChildren.Aggregate(new ScientificValue(0, 0), (acc, x) => acc + (x.result.EffectiveValue! * x.edge.Weight)),
 
             "Max" =>
-                activeChildren.Max(x => x.result.EffectiveValue!.Value),
+                activeChildren.Select(x => x.result.EffectiveValue!).Max()!,
 
             "Min" =>
-                activeChildren.Min(x => x.result.EffectiveValue!.Value),
+                activeChildren.Select(x => x.result.EffectiveValue!).Min()!,
 
             _ => throw new InvalidOperationException($"Unknown rollup operator: {operatorName}")
         };
@@ -210,7 +211,7 @@ public class GraphWalker : IGraphWalker
 
     // ── Neo4j data loading helpers ────────────────────────────────────────────
 
-    private async Task<(ScenarioNode scenario, string rootParameterId, Dictionary<string, double> baseValues)>
+    private async Task<(ScenarioNode scenario, string rootParameterId, Dictionary<string, ScientificValue> baseValues)>
         ResolveScenarioAsync(IAsyncSession session, string scenarioNodeId)
     {
         var cursor = await session.RunAsync(
@@ -231,25 +232,26 @@ public class GraphWalker : IGraphWalker
             ? bpv?.As<string>() : null;
 
         var baseValues = valuesJson is not null
-            ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, double>>(valuesJson)
-              ?? new Dictionary<string, double>()
-            : new Dictionary<string, double>();
+            ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ScientificValue>>(valuesJson)
+              ?? new Dictionary<string, ScientificValue>()
+            : new Dictionary<string, ScientificValue>();
 
         return (scenario, rootParameterId, baseValues);
     }
 
-    private async Task<Dictionary<string, double>> GetOverrideMapAsync(
+    private async Task<Dictionary<string, ScientificValue>> GetOverrideMapAsync(
         IAsyncSession session, string configurationNodeId)
     {
         var cursor = await session.RunAsync(
             CypherQueries.GetOverrideMapForConfiguration,
             new { configurationNodeId });
 
-        var overrides = new Dictionary<string, double>();
+        var overrides = new Dictionary<string, ScientificValue>();
         await foreach (var record in cursor)
         {
             var paramId = record["parameterId"].As<string>();
-            var value = record["overrideValue"].As<double>();
+            var valueJson = record["overrideValue"].As<string>();
+            var value = System.Text.Json.JsonSerializer.Deserialize<ScientificValue>(valueJson) ?? new ScientificValue(0, 0);
             overrides[paramId] = value;
         }
         return overrides;
