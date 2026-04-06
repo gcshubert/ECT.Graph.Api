@@ -42,6 +42,10 @@ public static class CypherQueries
         MATCH (n:ParameterNode {id: $id})
         DETACH DELETE n";
 
+    public const string DeleteStepWithLeaves = @"
+        MATCH (anchor:ParameterNode {id: $anchorId})
+        OPTIONAL MATCH (leaf:ParameterNode)-[:CONTRIBUTES_TO]->(anchor)
+        DETACH DELETE anchor, leaf";
     // ── ScenarioNode ──────────────────────────────────────────────────────────
 
     public const string CreateScenarioNode = @"
@@ -114,8 +118,8 @@ public static class CypherQueries
         CREATE (from)-[r:CONTRIBUTES_TO {
             id:             $id,
             rollupOperator: $rollupOperator,
-            weight:         $weight
-            sortOrder:      $sortOrder
+            weight:         $weight,
+            `sortOrder`:    $sortOrder
         }]->(to)
         RETURN r";
 

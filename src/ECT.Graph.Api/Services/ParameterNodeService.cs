@@ -12,6 +12,7 @@ public interface IParameterNodeService
     Task<IEnumerable<ParameterNode>> GetAllAsync();
     Task<ParameterNode?> UpdateAsync(ParameterNode node);
     Task<bool> DeleteAsync(string id);
+    Task<bool> DeleteWithLeavesAsync(string anchorId);
 }
 
 public class ParameterNodeService : IParameterNodeService
@@ -72,6 +73,13 @@ public class ParameterNodeService : IParameterNodeService
     {
         await using var session = _repo.OpenSession();
         await session.RunAsync(CypherQueries.DeleteParameterNode, new { id });
+        return true;
+    }
+
+    public async Task<bool> DeleteWithLeavesAsync(string anchorId)
+    {
+        await using var session = _repo.OpenSession();
+        await session.RunAsync(CypherQueries.DeleteStepWithLeaves, new { anchorId });
         return true;
     }
 

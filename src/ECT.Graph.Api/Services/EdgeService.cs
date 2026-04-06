@@ -70,7 +70,7 @@ public class EdgeService : IEdgeService
         var cursor = await session.RunAsync(
             CypherQueries.GetMaxSortOrderForParent, new { parentId });
         var records = await cursor.ToListAsync();
-        return records.Count > 0 ? records[0]["maxSortOrder"].As<int>() : 0;
+        return records.Count > 0 ? records[0]["maxSortOrder"].As<int?>(null) ?? 0 : 0;
     }
 
     public async Task<bool> DeleteContributesToAsync(string edgeId)
@@ -136,29 +136,28 @@ public class EdgeService : IEdgeService
 
         try
         {
-            // Try to deserialize as ScientificValue dictionary (new format)
-            var result = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ScientificValue>>(json.As<string>());
-            if (result != null) return result;
-        }
-        catch
-        {
-            // Fallback: try to deserialize as double dictionary (old format) and convert
-            try
+            var options = new System.Text.Json.JsonSerializerOptions
             {
-                var oldResult = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, double>>(json.As<string>());
-                if (oldResult != null)
-                {
-                    return oldResult.ToDictionary(kvp => kvp.Key, kvp => new ScientificValue(kvp.Value));
-                }
-            }
-            catch
-            {
-                // Ignore
-            }
+                PropertyNameCaseInsensitive = true
+            };
+            var raw = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ScientificValueRaw>>(
+                json.As<string>(), options);
+
+            if (raw != null)
+                return raw.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => new ScientificValue(kvp.Value.Coefficient, kvp.Value.Exponent));
         }
+        catch { }
+
         return new Dictionary<string, ScientificValue>();
     }
 
+    private sealed record ScientificValueRaw
+    {
+        public double Coefficient { get; init; }
+        public double Exponent { get; init; }
+    }
     public async Task DeleteUsesEdgesForScenarioAsync(string scenarioNodeId)
     {
         await using var session = _repo.OpenSession();

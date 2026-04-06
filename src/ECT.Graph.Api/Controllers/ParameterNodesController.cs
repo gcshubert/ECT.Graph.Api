@@ -60,4 +60,12 @@ public class ParameterNodesController : ControllerBase
         await _service.DeleteAsync(id);
         return NoContent();
     }
+
+    [HttpDelete("{id}/with-leaves")]
+    public async Task<IActionResult> DeleteWithLeaves(string id)
+    {
+        await _service.DeleteWithLeavesAsync(id);
+        return NoContent();
+    }
+
 }
