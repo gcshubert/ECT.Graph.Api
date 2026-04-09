@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Serialization;
 
 namespace ECT.Graph.Api.Domain.Math;
 
@@ -7,6 +8,7 @@ public class ScientificValue : IComparable<ScientificValue>
     public double Coefficient { get; set; }
     public double Exponent { get; set; }
 
+    [JsonConstructor]
     public ScientificValue(double coefficient, double exponent)
     {
         Coefficient = coefficient;
