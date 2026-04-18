@@ -9,6 +9,7 @@ namespace ECT.Graph.Api.Controllers;
 ///
 /// Edge types:
 ///   CONTRIBUTES_TO — ParameterNode → ParameterNode (topology structure, rollup operator, weight)
+///   DEPENDS_ON     — ParameterNode → ParameterNode (logical/temporal dependencies, no rollup)
 ///   USES           — ScenarioNode  → ParameterNode (establishes topology + carries base values)
 ///   BELONGS_TO     — ConfigurationNode → ScenarioNode
 ///   OVERRIDES      — ConfigurationNode → ParameterNode (carries override value for a run)
@@ -112,6 +113,30 @@ public class EdgesController : ControllerBase
         return Ok(edges);
     }
 
+    /// <summary>
+    /// Returns CONTRIBUTES_TO edges scoped to the subtree of a given scenario root node.
+    /// Pass the scenario root node id (e.g. "scenario-6-root").
+    /// </summary>
+    [HttpGet("contributes-to/by-scenario-root/{rootNodeId}")]
+    [ProducesResponseType(typeof(IEnumerable<ContributesToEdgeSummary>), 200)]
+    public async Task<IActionResult> GetContributesToByScenarioRoot(string rootNodeId)
+    {
+        var edges = await _service.GetContributesToByScenarioRootAsync(rootNodeId);
+        return Ok(edges);
+    }
+
+    /// <summary>
+    /// Returns CONTRIBUTES_TO edges for a specific scenario by ExternalScenarioId.
+    /// Filters edges where either child or parent node has the given ExternalScenarioId.
+    /// </summary>
+    [HttpGet("contributes-to/by-scenario/{scenarioId}")]
+    [ProducesResponseType(typeof(IEnumerable<ContributesToEdgeSummary>), 200)]
+    public async Task<IActionResult> GetContributesToByScenario(string scenarioId)
+    {
+        var edges = await _service.GetContributesToByScenarioIdAsync(scenarioId);
+        return Ok(edges);
+    }
+
     // ── OVERRIDES ─────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -152,6 +177,55 @@ public class EdgesController : ControllerBase
     public async Task<IActionResult> DeleteOverrides(string edgeId)
     {
         await _service.DeleteOverridesAsync(edgeId);
+        return NoContent();
+    }
+
+    // ── DEPENDS_ON ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Creates a DEPENDS_ON edge between two ParameterNodes.
+    /// Represents logical or temporal dependencies that do not participate in rollup calculations.
+    /// </summary>
+    [HttpPost("depends-on")]
+    [ProducesResponseType(typeof(DependsOnEdge), 201)]
+    public async Task<IActionResult> CreateDependsOn([FromBody] DependsOnEdge edge)
+    {
+        var created = await _service.CreateDependsOnAsync(edge);
+        return CreatedAtAction(nameof(CreateDependsOn), created);
+    }
+
+    /// <summary>
+    /// Returns all DEPENDS_ON edges — from/to ID pairs with edge properties.
+    /// Used for dependency analysis and critical path calculations.
+    /// </summary>
+    [HttpGet("depends-on")]
+    [ProducesResponseType(typeof(IEnumerable<DependsOnEdgeSummary>), 200)]
+    public async Task<IActionResult> GetAllDependsOn()
+    {
+        var edges = await _service.GetAllDependsOnAsync();
+        return Ok(edges);
+    }
+
+    /// <summary>
+    /// Gets a DEPENDS_ON edge by its Id.
+    /// </summary>
+    [HttpGet("depends-on/{edgeId}")]
+    [ProducesResponseType(typeof(DependsOnEdge), 200)]
+    [ProducesResponseType(404)]
+    public async Task<IActionResult> GetDependsOnById(string edgeId)
+    {
+        var edge = await _service.GetDependsOnByIdAsync(edgeId);
+        return edge is null ? NotFound() : Ok(edge);
+    }
+
+    /// <summary>
+    /// Deletes a DEPENDS_ON edge by its Id.
+    /// </summary>
+    [HttpDelete("depends-on/{edgeId}")]
+    [ProducesResponseType(204)]
+    public async Task<IActionResult> DeleteDependsOn(string edgeId)
+    {
+        await _service.DeleteDependsOnAsync(edgeId);
         return NoContent();
     }
 }

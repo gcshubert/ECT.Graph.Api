@@ -117,9 +117,14 @@ public class GraphWalker : IGraphWalker
         var node = subtree.Nodes[nodeId];
         var children = subtree.EdgesByParent.GetValueOrDefault(nodeId, new());
 
-        if (children.Count == 0)
+        // Check if this is a step anchor node with parameters stored as properties
+        var isStepAnchor = node.Role == ParameterRole.k && 
+                         (node.ECoefficient.HasValue || node.CCoefficient.HasValue || 
+                          node.KCoefficient.HasValue || node.TCoefficient.HasValue);
+
+        if (children.Count == 0 && !isStepAnchor)
         {
-            // Leaf node — value comes from effectiveValues
+            // Traditional leaf node — value comes from effectiveValues
             var isRelevant = IsNodeRelevantToSolveFor(node.Role, solveForMode);
             var leafValue = isRelevant && effectiveValues.TryGetValue(nodeId, out var v) ? v : (ScientificValue?)null;
 
@@ -129,17 +134,82 @@ public class GraphWalker : IGraphWalker
             );
         }
 
+        if (isStepAnchor)
+        {
+            // Step anchor node with parameters stored as properties
+            // Create virtual child nodes for each parameter type
+            var paramChildren = new List<NodeResult>();
+            
+            if (node.ECoefficient.HasValue && node.EExponent.HasValue)
+            {
+                var eValue = new ScientificValue(node.ECoefficient.Value, node.EExponent.Value);
+                if (IsNodeRelevantToSolveFor(ParameterRole.E, solveForMode))
+                {
+                    paramChildren.Add(new NodeResult(
+                        nodeId + "-E", node.Name + " - E", ParameterRole.E,
+                        eValue, 1.0, "Parameter", IsLeaf: true, Children: new()
+                    ));
+                }
+            }
+            
+            if (node.CCoefficient.HasValue && node.CExponent.HasValue)
+            {
+                var cValue = new ScientificValue(node.CCoefficient.Value, node.CExponent.Value);
+                if (IsNodeRelevantToSolveFor(ParameterRole.C, solveForMode))
+                {
+                    paramChildren.Add(new NodeResult(
+                        nodeId + "-C", node.Name + " - C", ParameterRole.C,
+                        cValue, 1.0, "Parameter", IsLeaf: true, Children: new()
+                    ));
+                }
+            }
+            
+            if (node.KCoefficient.HasValue && node.KExponent.HasValue)
+            {
+                var kValue = new ScientificValue(node.KCoefficient.Value, node.KExponent.Value);
+                if (IsNodeRelevantToSolveFor(ParameterRole.k, solveForMode))
+                {
+                    paramChildren.Add(new NodeResult(
+                        nodeId + "-k", node.Name + " - k", ParameterRole.k,
+                        kValue, 1.0, "Parameter", IsLeaf: true, Children: new()
+                    ));
+                }
+            }
+            
+            if (node.TCoefficient.HasValue && node.TExponent.HasValue)
+            {
+                var tValue = new ScientificValue(node.TCoefficient.Value, node.TExponent.Value);
+                if (IsNodeRelevantToSolveFor(ParameterRole.T, solveForMode))
+                {
+                    paramChildren.Add(new NodeResult(
+                        nodeId + "-T", node.Name + " - T", ParameterRole.T,
+                        tValue, 1.0, "Parameter", IsLeaf: true, Children: new()
+                    ));
+                }
+            }
+
+            // Rollup the parameter values
+            var rollupOperator = node.RollupOperator ?? "WeightedSum";
+            var paramEdges = paramChildren.Select(_ => new EdgeData(_.NodeId, rollupOperator, 1.0)).ToList();
+            var rolledUpValue = Rollup(paramChildren, paramEdges, rollupOperator);
+
+            return new NodeResult(
+                nodeId, node.Name, node.Role,
+                rolledUpValue, 1.0, rollupOperator, IsLeaf: false, Children: paramChildren
+            );
+        }
+
         // Internal node — evaluate children and rollup
         var childResults = children.Select(edge =>
             EvaluateNode(edge.ChildNodeId, subtree, effectiveValues, solveForMode)
         ).ToList();
 
-        var rollupOperator = node.RollupOperator ?? "WeightedSum";
-        var rolledUpValue = Rollup(childResults, children, rollupOperator);
+        var rollupOperator2 = node.RollupOperator ?? "WeightedSum";
+        var rolledUpValue2 = Rollup(childResults, children, rollupOperator2);
 
         return new NodeResult(
             nodeId, node.Name, node.Role,
-            rolledUpValue, 1.0, rollupOperator, IsLeaf: false, Children: childResults
+            rolledUpValue2, 1.0, rollupOperator2, IsLeaf: false, Children: childResults
         );
     }
 
@@ -315,7 +385,16 @@ public class GraphWalker : IGraphWalker
         n["name"].As<string>(),
         Enum.Parse<ParameterRole>(n["role"].As<string>()),
         n.Properties.TryGetValue("rollupOperator", out var op) && op is not null
-            ? op.As<string>() : null
+            ? op.As<string>() : null,
+        // New parameter properties for step anchor nodes
+        n.Properties.TryGetValue("eCoefficient", out var eCoeff) ? eCoeff?.As<double>() : null,
+        n.Properties.TryGetValue("eExponent", out var eExp) ? eExp?.As<double>() : null,
+        n.Properties.TryGetValue("cCoefficient", out var cCoeff) ? cCoeff?.As<double>() : null,
+        n.Properties.TryGetValue("cExponent", out var cExp) ? cExp?.As<double>() : null,
+        n.Properties.TryGetValue("kCoefficient", out var kCoeff) ? kCoeff?.As<double>() : null,
+        n.Properties.TryGetValue("kExponent", out var kExp) ? kExp?.As<double>() : null,
+        n.Properties.TryGetValue("tCoefficient", out var tCoeff) ? tCoeff?.As<double>() : null,
+        n.Properties.TryGetValue("tExponent", out var tExp) ? tExp?.As<double>() : null
     );
 
     private static ScenarioNode MapScenarioNode(INode n) => new()
@@ -330,7 +409,21 @@ public class GraphWalker : IGraphWalker
 
     // ── Internal data structures ──────────────────────────────────────────────
 
-    private record NodeData(string Id, string Name, ParameterRole Role, string? RollupOperator);
+    private record NodeData(
+        string Id, 
+        string Name, 
+        ParameterRole Role, 
+        string? RollupOperator,
+        // Parameter properties for step anchor nodes
+        double? ECoefficient,
+        double? EExponent,
+        double? CCoefficient,
+        double? CExponent,
+        double? KCoefficient,
+        double? KExponent,
+        double? TCoefficient,
+        double? TExponent
+    );
     private record EdgeData(string ChildNodeId, string RollupOperator, double Weight);
     private record SubtreeData(
         Dictionary<string, NodeData> Nodes,

@@ -16,13 +16,40 @@ public static class CypherQueries
             role:           $role,
             rollupOperator: $rollupOperator,
             description:    $description,
-            isActive:       $isActive
+            isActive:       $isActive,
+            coefficient:    $coefficient,
+            exponent:       $exponent,
+            provenance:     $provenance,
+            externalScenarioId: $externalScenarioId,
+            eCoefficient:   $eCoefficient,
+            eExponent:      $eExponent,
+            cCoefficient:   $cCoefficient,
+            cExponent:      $cExponent,
+            kCoefficient:   $kCoefficient,
+            kExponent:      $kExponent,
+            tCoefficient:   $tCoefficient,
+            tExponent:      $tExponent,
+            eProvenance:    $eProvenance,
+            cProvenance:    $cProvenance,
+            kProvenance:    $kProvenance,
+            tProvenance:    $tProvenance
         })
         RETURN n";
 
     public const string GetParameterNodeById = @"
         MATCH (n:ParameterNode {id: $id})
         RETURN n";
+
+    public const string GetParameterNodesByScenarioId = @"
+        MATCH (n:ParameterNode {externalScenarioId: $scenarioId})
+        RETURN n AS node
+        ORDER BY n.name";
+
+    public const string GetParameterNodesByScenarioRoot = @"
+        MATCH (root:ParameterNode {id: $rootId})
+        MATCH (root)<-[:CONTRIBUTES_TO*0..]-(n:ParameterNode)
+        RETURN DISTINCT n AS node
+        ORDER BY n.name";
 
     public const string GetAllParameterNodes = @"
         MATCH (n:ParameterNode)
@@ -35,7 +62,23 @@ public static class CypherQueries
             n.role           = $role,
             n.rollupOperator = $rollupOperator,
             n.description    = $description,
-            n.isActive       = $isActive
+            n.isActive       = $isActive,
+            n.coefficient    = $coefficient,
+            n.exponent       = $exponent,
+            n.provenance     = $provenance,
+            n.externalScenarioId = $externalScenarioId,
+            n.eCoefficient   = $eCoefficient,
+            n.eExponent      = $eExponent,
+            n.cCoefficient   = $cCoefficient,
+            n.cExponent      = $cExponent,
+            n.kCoefficient   = $kCoefficient,
+            n.kExponent      = $kExponent,
+            n.tCoefficient   = $tCoefficient,
+            n.tExponent      = $tExponent,
+            n.eProvenance    = $eProvenance,
+            n.cProvenance    = $cProvenance,
+            n.kProvenance    = $kProvenance,
+            n.tProvenance    = $tProvenance
         RETURN n";
 
     public const string DeleteParameterNode = @"
@@ -46,6 +89,10 @@ public static class CypherQueries
         MATCH (anchor:ParameterNode {id: $anchorId})
         OPTIONAL MATCH (leaf:ParameterNode)-[:CONTRIBUTES_TO]->(anchor)
         DETACH DELETE anchor, leaf";
+
+    public const string DeleteAllParameterNodesForScenario = @"
+        MATCH (n:ParameterNode {externalScenarioId: $scenarioId})
+        DETACH DELETE n";
     // ── ScenarioNode ──────────────────────────────────────────────────────────
 
     public const string CreateScenarioNode = @"
@@ -134,6 +181,23 @@ public static class CypherQueries
     RETURN child.id AS childId, parent.id AS parentId, r.weight AS weight, r.rollupOperator AS rollupOperator, r.id AS id, r.sortOrder AS sortOrder
     ORDER BY r.sortOrder ASC";
 
+    /// <summary>
+    /// Returns all CONTRIBUTES_TO edges reachable from a scenario's root ParameterNode.
+    /// Scoped to a single scenario via the root node id.
+    /// </summary>
+    public const string GetContributesToEdgesByScenarioRoot = @"
+    MATCH (root:ParameterNode {id: $rootId})<-[:CONTRIBUTES_TO*1..]-(child:ParameterNode)
+    MATCH (child)-[r:CONTRIBUTES_TO]->(parent:ParameterNode)
+    RETURN child.id AS childId, parent.id AS parentId, r.weight AS weight,
+           r.rollupOperator AS rollupOperator, r.id AS id, r.sortOrder AS sortOrder
+    ORDER BY r.sortOrder ASC";
+
+    public const string GetContributesToEdgesByScenarioId = @"
+    MATCH (child:ParameterNode {externalScenarioId: $scenarioId})-[r:CONTRIBUTES_TO]->(parent:ParameterNode)
+    RETURN child.id AS childId, parent.id AS parentId, r.weight AS weight,
+           r.rollupOperator AS rollupOperator, r.id AS id, r.sortOrder AS sortOrder
+    ORDER BY r.sortOrder ASC";
+
     public const string GetMaxSortOrderForParent = @"
     MATCH (child:ParameterNode)-[r:CONTRIBUTES_TO]->(parent:ParameterNode {id: $parentId})
     RETURN coalesce(max(r.sortOrder), 0) AS maxSortOrder";
@@ -144,6 +208,32 @@ public static class CypherQueries
 
     public const string DeleteContributesToEdge = @"
         MATCH ()-[r:CONTRIBUTES_TO {id: $id}]-()
+        DELETE r";
+
+    // ── DEPENDS_ON edges ─────────────────────────────────────────────────────
+
+    public const string CreateDependsOnEdge = @"
+        MATCH (from:ParameterNode {id: $fromId})
+        MATCH (to:ParameterNode   {id: $toId})
+        CREATE (from)-[r:DEPENDS_ON {
+            id:             $id,
+            description:    $description,
+            strength:       $strength,
+            `sortOrder`:    $sortOrder
+        }]->(to)
+        RETURN r";
+
+    public const string GetDependsOnEdgeById = @"
+        MATCH ()-[r:DEPENDS_ON {id: $id}]-()
+        RETURN r";
+
+    public const string GetAllDependsOnEdges = @"
+        MATCH (from:ParameterNode)-[r:DEPENDS_ON]->(to:ParameterNode)
+        RETURN from.id AS fromId, to.id AS toId, r.description AS description, r.strength AS strength, r.id AS id, r.sortOrder AS sortOrder
+        ORDER BY r.sortOrder ASC";
+
+    public const string DeleteDependsOnEdge = @"
+        MATCH ()-[r:DEPENDS_ON {id: $id}]-()
         DELETE r";
 
     // ── USES edges ────────────────────────────────────────────────────────────
@@ -199,6 +289,7 @@ public static class CypherQueries
     /// Returns all nodes and CONTRIBUTES_TO edges reachable from the given root.
     /// apoc.path.subgraphAll is the cleanest approach but requires APOC plugin.
     /// This native alternative uses variable-length path matching.
+    /// Edge type filter applied: only CONTRIBUTES_TO edges are traversed.
     /// </summary>
     public const string GetSubtree = @"
         MATCH path = (root:ParameterNode {id: $rootId})<-[:CONTRIBUTES_TO*0..]-(leaf:ParameterNode)

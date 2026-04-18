@@ -35,13 +35,14 @@ public class ContributesToEdge
 
 public class ContributesToEdgeSummary
 {
-    public string Id { get; set; } = string.Empty;   // ← add
+    public string Id { get; set; } = string.Empty;   
     public string ChildId { get; set; } = string.Empty;
     public string ParentId { get; set; } = string.Empty;
-    public double Weight { get; set; }
+    public double Weight { get; set; } = 0.0;
     public string? RollupOperator { get; set; }
     public int SortOrder { get; set; } = 0;
 }
+
 /// <summary>
 /// USES — ScenarioNode to root ParameterNode.
 /// Establishes which topology a scenario operates over.
@@ -90,5 +91,43 @@ public class OverridesEdge
     /// The override value that replaces the scenario base value for this parameter
     /// during a configuration run.
     /// </summary>
-    public ScientificValue OverrideValue { get; set; }
+    public ScientificValue OverrideValue { get; set; } = new ScientificValue(0, 0);
+}
+
+/// <summary>
+/// DEPENDS_ON — between ParameterNodes.
+/// Represents logical or temporal dependencies between steps in the process topology.
+/// Does not participate in rollup calculations - used for dependency analysis only.
+/// </summary>
+public class DependsOnEdge
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+
+    /// <summary>Source ParameterNode Id (dependent step).</summary>
+    public string FromParameterNodeId { get; set; } = string.Empty;
+
+    /// <summary>Target ParameterNode Id (prerequisite step).</summary>
+    public string ToParameterNodeId { get; set; } = string.Empty;
+
+    /// <summary>Description of the dependency relationship.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Strength of the dependency (0.0–1.0).
+    /// Higher values indicate stronger dependencies that may impact critical path analysis.
+    /// </summary>
+    public double Strength { get; set; } = 1.0;
+
+    /// <summary>Order for display purposes.</summary>
+    public int SortOrder { get; set; } = 0;
+}
+
+public class DependsOnEdgeSummary
+{
+    public string Id { get; set; } = string.Empty;
+    public string FromId { get; set; } = string.Empty;
+    public string ToId { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public double Strength { get; set; }
+    public int SortOrder { get; set; } = 0;
 }

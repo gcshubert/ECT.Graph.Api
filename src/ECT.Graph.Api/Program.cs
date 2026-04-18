@@ -26,7 +26,7 @@ builder.Services.AddControllers()
             new System.Text.Json.Serialization.JsonStringEnumConverter());
         opts.JsonSerializerOptions.Converters.Add(
             new ECT.Graph.Api.Domain.Math.ScientificValueJsonConverter());
-        // opts.JsonSerializerOptions.PropertyNamingPolicy = null; // Use PascalCase
+        opts.JsonSerializerOptions.PropertyNamingPolicy = null; // Use PascalCase
         opts.JsonSerializerOptions.NumberHandling =
             System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
     });

@@ -68,4 +68,51 @@ public class ParameterNodesController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Deletes all ParameterNodes for a scenario (clears the deck).</summary>
+    [HttpDelete("scenario/{scenarioId}")]
+    [ProducesResponseType(204)]
+    public async Task<IActionResult> DeleteAllForScenario(string scenarioId)
+    {
+        await _service.DeleteAllForScenarioAsync(scenarioId);
+        return NoContent();
+    }
+
+    // ── Step Creation Endpoints ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Creates a step with anchor and leaf nodes, automatically wiring CONTRIBUTES_TO edges.
+    /// </summary>
+    [HttpPost("steps")]
+    [ProducesResponseType(typeof(StepCreationResult), 201)]
+    public async Task<IActionResult> CreateStep([FromBody] CreateStepRequest request)
+    {
+        var result = await _service.CreateStepAsync(request);
+        return CreatedAtAction(nameof(CreateStep), result);
+    }
+
+    /// <summary>
+    /// Gets all ParameterNodes for a scenario, returning a flat list of nodes.
+    /// </summary>
+    [HttpGet("by-scenario/{scenarioId}")]
+    [ProducesResponseType(typeof(IEnumerable<ParameterNode>), 200)]
+    public async Task<IActionResult> GetStepsByScenario(string scenarioId)
+    {
+        // Return flat node list - GetStepsAsync returns StepResult objects, wrong shape
+        var allNodes = await _service.GetAllAsync();
+        var scenarioNodes = allNodes.Where(n => n.ExternalScenarioId == scenarioId);
+        return Ok(scenarioNodes);
+    }
+
+    /// <summary>
+    /// Returns all ParameterNodes in the subtree rooted at the given node.
+    /// Scoped to a single scenario — pass the scenario root node id (e.g. "scenario-6-root").
+    /// </summary>
+    [HttpGet("by-scenario-root/{rootNodeId}")]
+    [ProducesResponseType(typeof(IEnumerable<ParameterNode>), 200)]
+    public async Task<IActionResult> GetByScenarioRoot(string rootNodeId)
+    {
+        var nodes = await _service.GetByScenarioRootAsync(rootNodeId);
+        return Ok(nodes);
+    }
+
 }

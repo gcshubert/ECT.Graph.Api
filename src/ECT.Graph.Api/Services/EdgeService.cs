@@ -9,21 +9,23 @@ namespace ECT.Graph.Api.Services;
 public interface IEdgeService
 {
     Task<IEnumerable<ContributesToEdgeSummary>> GetAllContributesToAsync();
+    Task<IEnumerable<ContributesToEdgeSummary>> GetContributesToByScenarioRootAsync(string rootNodeId);
+    Task<IEnumerable<ContributesToEdgeSummary>> GetContributesToByScenarioIdAsync(string scenarioId);
     Task<ContributesToEdge> CreateContributesToAsync(ContributesToEdge edge);
     Task<int> GetMaxSortOrderForParentAsync(string parentId);
-
     Task<bool> DeleteContributesToAsync(string edgeId);
-
     Task<UsesEdge> CreateUsesAsync(UsesEdge edge);
     Task<UsesEdge?> GetUsesEdgeForScenarioAsync(string scenarioNodeId);
     Task DeleteUsesEdgesForScenarioAsync(string scenarioNodeId);
     Task<UsesEdge> UpsertUsesAsync(UsesEdge edge);
-
     Task<BelongsToEdge> CreateBelongsToAsync(BelongsToEdge edge);
-
     Task<OverridesEdge> CreateOverridesAsync(OverridesEdge edge);
     Task<IEnumerable<(string ParameterNodeId, ScientificValue OverrideValue)>> GetOverridesForConfigurationAsync(string configurationNodeId);
     Task<bool> DeleteOverridesAsync(string edgeId);
+    Task<IEnumerable<DependsOnEdgeSummary>> GetAllDependsOnAsync();
+    Task<DependsOnEdge> CreateDependsOnAsync(DependsOnEdge edge);
+    Task<DependsOnEdge?> GetDependsOnByIdAsync(string edgeId);
+    Task<bool> DeleteDependsOnAsync(string edgeId);
 }
 
 public class EdgeService : IEdgeService
@@ -41,11 +43,44 @@ public class EdgeService : IEdgeService
         var records = await cursor.ToListAsync();
         return records.Select(r => new ContributesToEdgeSummary
         {
-            ChildId = r["childId"].As<string>(),
-            ParentId = r["parentId"].As<string>(),
-            Weight = r["weight"].As<double?>(null) ?? 1.0,
+            Id             = r["id"].As<string>(),
+            ChildId        = r["childId"].As<string>(),
+            ParentId       = r["parentId"].As<string>(),
+            Weight         = r["weight"].As<double?>(null) ?? 1.0,
             RollupOperator = r["rollupOperator"]?.As<string>(),
-            SortOrder = r["sortOrder"].As<int?>(null) ?? 0
+            SortOrder      = r["sortOrder"].As<int?>(null) ?? 0
+        });
+    }
+
+    public async Task<IEnumerable<ContributesToEdgeSummary>> GetContributesToByScenarioRootAsync(string rootNodeId)
+    {
+        await using var session = _repo.OpenSession();
+        var cursor = await session.RunAsync(CypherQueries.GetContributesToEdgesByScenarioRoot, new { rootId = rootNodeId });
+        var records = await cursor.ToListAsync();
+        return records.Select(r => new ContributesToEdgeSummary
+        {
+            Id             = r["id"].As<string>(),
+            ChildId        = r["childId"].As<string>(),
+            ParentId       = r["parentId"].As<string>(),
+            Weight         = r["weight"].As<double?>(null) ?? 1.0,
+            RollupOperator = r["rollupOperator"]?.As<string>(),
+            SortOrder      = r["sortOrder"].As<int?>(null) ?? 0
+        });
+    }
+
+    public async Task<IEnumerable<ContributesToEdgeSummary>> GetContributesToByScenarioIdAsync(string scenarioId)
+    {
+        await using var session = _repo.OpenSession();
+        var cursor = await session.RunAsync(CypherQueries.GetContributesToEdgesByScenarioId, new { scenarioId });
+        var records = await cursor.ToListAsync();
+        return records.Select(r => new ContributesToEdgeSummary
+        {
+            Id             = r["id"].As<string>(),
+            ChildId        = r["childId"].As<string>(),
+            ParentId       = r["parentId"].As<string>(),
+            Weight         = r["weight"].As<double?>(null) ?? 1.0,
+            RollupOperator = r["rollupOperator"]?.As<string>(),
+            SortOrder      = r["sortOrder"].As<int?>(null) ?? 0
         });
     }
 
@@ -228,6 +263,79 @@ public class EdgeService : IEdgeService
     {
         await using var session = _repo.OpenSession();
         await session.RunAsync(CypherQueries.DeleteOverridesEdge, new { id = edgeId });
+        return true;
+    }
+
+    // ── DEPENDS_ON ─────────────────────────────────────────────────────────────
+
+    public async Task<IEnumerable<DependsOnEdgeSummary>> GetAllDependsOnAsync()
+    {
+        await using var session = _repo.OpenSession();
+        var cursor = await session.RunAsync(CypherQueries.GetAllDependsOnEdges);
+        var records = await cursor.ToListAsync();
+        return records.Select(r => new DependsOnEdgeSummary
+        {
+            Id = r["id"].As<string>(),
+            FromId = r["fromId"].As<string>(),
+            ToId = r["toId"].As<string>(),
+            Description = r["description"]?.As<string>(),
+            Strength = r["strength"].As<double?>(null) ?? 1.0,
+            SortOrder = r["sortOrder"].As<int?>(null) ?? 0
+        });
+    }
+
+    public async Task<DependsOnEdge> CreateDependsOnAsync(DependsOnEdge edge)
+    {
+        await using var session = _repo.OpenSession();
+        await session.RunAsync(CypherQueries.CreateDependsOnEdge, new
+        {
+            fromId = edge.FromParameterNodeId,
+            toId = edge.ToParameterNodeId,
+            id = edge.Id,
+            description = edge.Description,
+            strength = edge.Strength,
+            sortOrder = edge.SortOrder
+        });
+        return edge;
+    }
+
+    public async Task<DependsOnEdge?> GetDependsOnByIdAsync(string edgeId)
+    {
+        await using var session = _repo.OpenSession();
+        var cursor = await session.RunAsync(CypherQueries.GetDependsOnEdgeById, new { id = edgeId });
+        var records = await cursor.ToListAsync();
+        
+        if (records.Count == 0) return null;
+        
+        var r = records[0]["r"].As<IRelationship>();
+        
+        // Use a single query to get the relationship with both nodes and their IDs
+        await using var session2 = _repo.OpenSession();
+        var fullCursor = await session2.RunAsync(@" 
+            MATCH (from)-[r]->(to)
+            WHERE elementId(r) = $elementId
+            RETURN from.id AS fromId, to.id AS toId, r
+        ", new { elementId = r.ElementId });
+        
+        var fullRecord = await fullCursor.ToListAsync();
+        if (fullRecord.Count == 0) return null;
+        
+        var record = fullRecord[0];
+        return new DependsOnEdge
+        {
+            Id = r.Properties.TryGetValue("id", out var id) ? id.As<string>() : edgeId,
+            FromParameterNodeId = record["fromId"].As<string>(),
+            ToParameterNodeId = record["toId"].As<string>(),
+            Description = r.Properties.TryGetValue("description", out var desc) ? desc?.As<string>() : null,
+            Strength = r.Properties.TryGetValue("strength", out var strength) ? strength.As<double>() : 1.0,
+            SortOrder = r.Properties.TryGetValue("sortOrder", out var sortOrder) ? sortOrder.As<int>() : 0
+        };
+    }
+
+    public async Task<bool> DeleteDependsOnAsync(string edgeId)
+    {
+        await using var session = _repo.OpenSession();
+        await session.RunAsync(CypherQueries.DeleteDependsOnEdge, new { id = edgeId });
         return true;
     }
 }
