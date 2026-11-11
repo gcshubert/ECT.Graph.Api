@@ -5,6 +5,11 @@ using ECT.Graph.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (string.IsNullOrWhiteSpace(builder.Configuration["Neo4j:Password"]))
+{
+    throw new InvalidOperationException(
+        "Neo4j password is required. Set Neo4j__Password or configure Neo4j:Password with dotnet user-secrets.");
+}
 
 // Neo4j
 builder.Services.Configure<Neo4jSettings>(builder.Configuration.GetSection("Neo4j"));
