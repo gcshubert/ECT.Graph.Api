@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>ECT.Graph.Api</RootNamespace>
     <AssemblyName>ECT.Graph.Api</AssemblyName>
+    <UserSecretsId>5ff0af64-2196-4e97-b664-47256a2aa646</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
