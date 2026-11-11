@@ -32,7 +32,8 @@ public static class CypherQueries
             eProvenance:    $eProvenance,
             cProvenance:    $cProvenance,
             kProvenance:    $kProvenance,
-            tProvenance:    $tProvenance
+            tProvenance:    $tProvenance,
+            aggregationPattern: $aggregationPattern
         })
         RETURN n";
 
@@ -78,7 +79,8 @@ public static class CypherQueries
             n.eProvenance    = $eProvenance,
             n.cProvenance    = $cProvenance,
             n.kProvenance    = $kProvenance,
-            n.tProvenance    = $tProvenance
+            n.tProvenance    = $tProvenance,
+            n.aggregationPattern = $aggregationPattern
         RETURN n";
 
     public const string DeleteParameterNode = @"

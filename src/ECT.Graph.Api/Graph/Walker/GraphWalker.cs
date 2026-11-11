@@ -117,12 +117,18 @@ public class GraphWalker : IGraphWalker
         var node = subtree.Nodes[nodeId];
         var children = subtree.EdgesByParent.GetValueOrDefault(nodeId, new());
 
-        // Check if this is a step anchor node with parameters stored as properties
-        var isStepAnchor = node.Role == ParameterRole.k && 
-                         (node.ECoefficient.HasValue || node.CCoefficient.HasValue || 
-                          node.KCoefficient.HasValue || node.TCoefficient.HasValue);
+        // Explicit aggregation pattern (Aug 2026), with a backward-compatible
+        // fallback for nodes not yet backfilled with the field: infer "Leaf"
+        // for any node carrying its own E/C/k/T properties (the old
+        // isStepAnchor heuristic), else treat as a plain internal/leaf node
+        // by the old children-count rule. See ParameterNode.AggregationPattern
+        // and TF V2_3 §12/§14.1 for what each pattern means.
+        var hasOwnParameterProperties = node.ECoefficient.HasValue || node.CCoefficient.HasValue ||
+                                         node.KCoefficient.HasValue || node.TCoefficient.HasValue;
+        var pattern = node.AggregationPattern
+            ?? (node.Role == ParameterRole.k && hasOwnParameterProperties ? "Leaf" : null);
 
-        if (children.Count == 0 && !isStepAnchor)
+        if (children.Count == 0 && pattern is null)
         {
             // Traditional leaf node — value comes from effectiveValues
             var isRelevant = IsNodeRelevantToSolveFor(node.Role, solveForMode);
@@ -134,12 +140,39 @@ public class GraphWalker : IGraphWalker
             );
         }
 
-        if (isStepAnchor)
+        if (pattern == "PureRollup")
         {
-            // Step anchor node with parameters stored as properties
-            // Create virtual child nodes for each parameter type
+            // Pure rollup container (TF V2_3 §12): owns nothing itself —
+            // every value is computed from real children, uniformly.
+            var childResultsPR = children.Select(edge =>
+                EvaluateNode(edge.ChildNodeId, subtree, effectiveValues, solveForMode)
+            ).ToList();
+
+            var rollupOperatorPR = node.RollupOperator ?? "WeightedSum";
+            var rolledUpPR = Rollup(childResultsPR, children, rollupOperatorPR);
+
+            return new NodeResult(
+                nodeId, node.Name, node.Role,
+                rolledUpPR, 1.0, rollupOperatorPR, IsLeaf: false, Children: childResultsPR
+            );
+        }
+
+        if (pattern == "Leaf" || pattern == "JointNecessity")
+        {
+            // Leaf: owns E/C/k/T directly, no real children expected.
+            // JointNecessity (TF V2_3 §14.1): owns T/C/E directly, same as
+            // Leaf — but k is NOT authoritative on the node itself; it must
+            // be summed live from real children (Families/Interface-style
+            // sub-steps), which is the fix for the single-level-traversal
+            // bug this pattern-dispatch replaces. If a JointNecessity node
+            // has no real children yet (mid-build), it falls back to its
+            // own stored k so partial scenarios don't break.
+            ScientificValue? kFromChildren = pattern == "JointNecessity" && children.Count > 0
+                ? SumChildK(children, subtree)
+                : null;
+
             var paramChildren = new List<NodeResult>();
-            
+
             if (node.ECoefficient.HasValue && node.EExponent.HasValue)
             {
                 var eValue = new ScientificValue(node.ECoefficient.Value, node.EExponent.Value);
@@ -151,7 +184,7 @@ public class GraphWalker : IGraphWalker
                     ));
                 }
             }
-            
+
             if (node.CCoefficient.HasValue && node.CExponent.HasValue)
             {
                 var cValue = new ScientificValue(node.CCoefficient.Value, node.CExponent.Value);
@@ -163,19 +196,21 @@ public class GraphWalker : IGraphWalker
                     ));
                 }
             }
-            
-            if (node.KCoefficient.HasValue && node.KExponent.HasValue)
+
+            // k: prefer the live sum from real children (JointNecessity);
+            // fall back to the node's own stored k (Leaf, or a
+            // JointNecessity node with no real children yet).
+            var kValue = kFromChildren ?? (node.KCoefficient.HasValue && node.KExponent.HasValue
+                ? new ScientificValue(node.KCoefficient.Value, node.KExponent.Value)
+                : null);
+            if (kValue is not null && IsNodeRelevantToSolveFor(ParameterRole.k, solveForMode))
             {
-                var kValue = new ScientificValue(node.KCoefficient.Value, node.KExponent.Value);
-                if (IsNodeRelevantToSolveFor(ParameterRole.k, solveForMode))
-                {
-                    paramChildren.Add(new NodeResult(
-                        nodeId + "-k", node.Name + " - k", ParameterRole.k,
-                        kValue, 1.0, "Parameter", IsLeaf: true, Children: new()
-                    ));
-                }
+                paramChildren.Add(new NodeResult(
+                    nodeId + "-k", node.Name + " - k", ParameterRole.k,
+                    kValue, 1.0, "Parameter", IsLeaf: true, Children: new()
+                ));
             }
-            
+
             if (node.TCoefficient.HasValue && node.TExponent.HasValue)
             {
                 var tValue = new ScientificValue(node.TCoefficient.Value, node.TExponent.Value);
@@ -211,6 +246,35 @@ public class GraphWalker : IGraphWalker
             nodeId, node.Name, node.Role,
             rolledUpValue2, 1.0, rollupOperator2, IsLeaf: false, Children: childResults
         );
+    }
+
+    /// <summary>
+    /// Sums k live across a JointNecessity node's real children (TF V2_3
+    /// §14.1 — "the children carry k only"). Recurses into grandchildren
+    /// if a child is itself an aggregate rather than a plain leaf, using
+    /// each descendant's own stored k regardless of solve-for mode (k is
+    /// always the quantity being combined here, never gated by
+    /// IsNodeRelevantToSolveFor — that gating is for the parent's own
+    /// E/C/T, not for k flowing up from children).
+    /// </summary>
+    private static ScientificValue? SumChildK(List<EdgeData> children, SubtreeData subtree)
+    {
+        ScientificValue? sum = null;
+        foreach (var edge in children)
+        {
+            if (!subtree.Nodes.TryGetValue(edge.ChildNodeId, out var child)) continue;
+            var grandchildren = subtree.EdgesByParent.GetValueOrDefault(edge.ChildNodeId, new());
+
+            ScientificValue? childK = grandchildren.Count > 0
+                ? SumChildK(grandchildren, subtree)
+                : (child.KCoefficient.HasValue && child.KExponent.HasValue
+                    ? new ScientificValue(child.KCoefficient.Value, child.KExponent.Value)
+                    : null);
+
+            if (childK is not null)
+                sum = sum is null ? childK : sum! + childK!;
+        }
+        return sum;
     }
 
     // ── Rollup math ───────────────────────────────────────────────────────────
@@ -394,7 +458,8 @@ public class GraphWalker : IGraphWalker
         n.Properties.TryGetValue("kCoefficient", out var kCoeff) ? kCoeff?.As<double>() : null,
         n.Properties.TryGetValue("kExponent", out var kExp) ? kExp?.As<double>() : null,
         n.Properties.TryGetValue("tCoefficient", out var tCoeff) ? tCoeff?.As<double>() : null,
-        n.Properties.TryGetValue("tExponent", out var tExp) ? tExp?.As<double>() : null
+        n.Properties.TryGetValue("tExponent", out var tExp) ? tExp?.As<double>() : null,
+        n.Properties.TryGetValue("aggregationPattern", out var aggPattern) ? aggPattern?.As<string>() : null
     );
 
     private static ScenarioNode MapScenarioNode(INode n) => new()
@@ -422,7 +487,8 @@ public class GraphWalker : IGraphWalker
         double? KCoefficient,
         double? KExponent,
         double? TCoefficient,
-        double? TExponent
+        double? TExponent,
+        string? AggregationPattern
     );
     private record EdgeData(string ChildNodeId, string RollupOperator, double Weight);
     private record SubtreeData(

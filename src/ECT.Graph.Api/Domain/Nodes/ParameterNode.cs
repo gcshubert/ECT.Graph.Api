@@ -142,6 +142,23 @@ public class ParameterNode
     /// </summary>
     public string? TProvenance { get; set; }
 
+    // ─────────────────────────────────────────────────────────────
+    // Aggregation pattern (Aug 2026) — explicit, required dispatch
+    // key for GraphWalker.EvaluateNode. Replaces the old isStepAnchor
+    // heuristic, which could not distinguish a joint-necessity parent
+    // (owns T/C itself; real children carry k only — TF V2_3 §14.1)
+    // from a pure rollup container (owns nothing; everything computed
+    // from children) from a true leaf (owns E/C/k/T; no children).
+    // ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// One of "Leaf", "PureRollup", or "JointNecessity". Null on
+    /// pre-migration nodes pending backfill — GraphWalker treats null
+    /// as "Leaf" for backward compatibility, matching the old default
+    /// behaviour for nodes with no real children.
+    /// </summary>
+    public string? AggregationPattern { get; set; }
+
 }
 
 public enum ParameterRole

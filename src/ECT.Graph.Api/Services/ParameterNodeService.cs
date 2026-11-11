@@ -19,6 +19,7 @@ public class CreateStepRequest
     public double? ParentWeight { get; set; }
     public int? ParentSortOrder { get; set; }
     public RollupOperator? RollupOperator { get; set; }
+    public string? AggregationPattern { get; set; }
     public List<ParameterDefinition> Parameters { get; set; } = new();
 }
 
@@ -104,7 +105,8 @@ public class ParameterNodeService : IParameterNodeService
             eProvenance    = node.EProvenance,
             cProvenance    = node.CProvenance,
             kProvenance    = node.KProvenance,
-            tProvenance    = node.TProvenance
+            tProvenance    = node.TProvenance,
+            aggregationPattern = node.AggregationPattern
         });
         var record = await cursor.SingleAsync();
         return MapNode(record["n"].As<INode>());
@@ -161,7 +163,8 @@ public class ParameterNodeService : IParameterNodeService
             eProvenance    = node.EProvenance,
             cProvenance    = node.CProvenance,
             kProvenance    = node.KProvenance,
-            tProvenance    = node.TProvenance
+            tProvenance    = node.TProvenance,
+            aggregationPattern = node.AggregationPattern
         });
         var records = await cursor.ToListAsync();
         return records.Count == 0 ? null : MapNode(records[0]["n"].As<INode>());
@@ -217,7 +220,8 @@ public class ParameterNodeService : IParameterNodeService
         EProvenance = n.Properties.TryGetValue("eProvenance", out var eProv) ? eProv?.As<string>() : null,
         CProvenance = n.Properties.TryGetValue("cProvenance", out var cProv) ? cProv?.As<string>() : null,
         KProvenance = n.Properties.TryGetValue("kProvenance", out var kProv) ? kProv?.As<string>() : null,
-        TProvenance = n.Properties.TryGetValue("tProvenance", out var tProv) ? tProv?.As<string>() : null
+        TProvenance = n.Properties.TryGetValue("tProvenance", out var tProv) ? tProv?.As<string>() : null,
+        AggregationPattern = n.Properties.TryGetValue("aggregationPattern", out var aggPattern) ? aggPattern?.As<string>() : null
     };
 
     // ── Step Creation Methods ─────────────────────────────────────────────────────
@@ -238,6 +242,7 @@ public class ParameterNodeService : IParameterNodeService
             Description = request.Description,
             IsActive = true,
             ExternalScenarioId = request.ScenarioId,
+            AggregationPattern = request.AggregationPattern,
             
             // Store parameters directly on anchor node instead of separate leaf nodes
             ECoefficient = request.Parameters.FirstOrDefault(p => p.Role == ParameterRole.E)?.Value.Coefficient,
